@@ -1,0 +1,31 @@
+### NETWORKING ###
+
+1. Create a test program for UDP connection.
+2. Create a test program for TCP connection.
+3. Set up the Jetson Orin as Wifi Access Point.
+4. Get an ESP-32 and create a test program for UDP connection.
+5. Use the ESP-32 and create a test program for TCP connection.
+
+Use the above to send some data back and forth. Inspect data.
+
+### PROGRAM ###
+
+1. Get and deploy WhisperTRT on some data to evaluate its performance. Post results on the project wiki.
+2. Get and deploy a language translation model and evaluate its performance. Post reults on the project wiki.
+3. Write receiving code for Audio UDP connection.
+4. Decide on an architecture for receiving the 2 bit input signal.
+5. Publish the finished text on a UNIX-domain socket.
+6. Write a separate program that just reads the UNIX-domain socket and starts writing over TCP to the ESP. It must send a text stream and a way to identify which language (user or subject) it is.
+
+
+7. Using synthetic 48 kHz audio signal, transform it into a signal that is suitable for WhisperTRT.
+8. Write test programs that send 1. Synthetic 48 kHz audio signal and 2. Synthetic 2-bit control signal (Language signal and Active signal)
+9. Architect a way to use the control signals and settings variables (Language Signal and Active Signal) to control what the entire pipeline does.
+
+
+### TESTING ###
+
+1. Test the program using various settings variables on synthetic audio signal and control signal (written in above bulletin 8)
+2. Test the program using various settings variables on data received from ESP-32 based synthetic audio and control signal generator
+3. Ensure we get good program output for both transcribe function (lang 1) transcribe (lang 2) and translate (lang 1) and translate (lang 2), which covers whole breadth of program functionality.
+4. Ensure we get good text output on ESP-32 side in serial debug after sending synthetic data from the ESP-32. Ensure the ESP-32 can understand which language is which (and hence, which screen to send the information to). 
