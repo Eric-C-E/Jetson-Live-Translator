@@ -29,3 +29,24 @@ Use the above to send some data back and forth. Inspect data.
 2. Test the program using various settings variables on data received from ESP-32 based synthetic audio and control signal generator
 3. Ensure we get good program output for both transcribe function (lang 1) transcribe (lang 2) and translate (lang 1) and translate (lang 2), which covers whole breadth of program functionality.
 4. Ensure we get good text output on ESP-32 side in serial debug after sending synthetic data from the ESP-32. Ensure the ESP-32 can understand which language is which (and hence, which screen to send the information to). 
+
+### Audio Preprocessing ###
+
+Socket Reader and Deframer (read header, read payload_len bytes after)
+throws: {seq, timestamp, pcm_bytes} into pipeline
+
+seq for ordering issues, pcm_bytes to know how long, timestamp not used for now unless for synchro
+
+Accumulator (RAM RING BUFFER)
+
+Capacity can be made into something like 30 seconds (480k samples @ 16kHz = 960KB) . Append chunks of x ms length. Buffer contains "Most Recent Audio". 
+
+### Sliding Window Method ###
+
+Keep a sliding window of audio
+
+Run partial inference every 250ms with 50 overlap.
+
+Experiment with logic to remove unstable partial transcripts.
+
+OW: revert to full button-gated full sequence inference if it's proving too hard.

@@ -18,3 +18,18 @@ The program can take input in the form of an audio stream (for transcription or 
 Change the "settings" flags to easily change the functionality of the program and what it expects. The device outputs to a UNIX-domain socket which can be used for example, to send translated text over TCP to a receiver.
 
 # How to run it?
+
+## Setup (venv)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+System packages you may need (varies by OS):
+- `ffmpeg` (Whisper audio decode)
+- PortAudio headers/libs (for `pyaudio`)
+
+On Jetson, install NVIDIA-provided PyTorch + TensorRT (JetPack) first, then install `requirements.txt`.
