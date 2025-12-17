@@ -4,7 +4,8 @@
 # - You still need system packages like `ffmpeg` (Whisper) and PortAudio (PyAudio).
 # - On Jetson, install NVIDIA-provided PyTorch + TensorRT (JetPack) first; then `pip install -r requirements.txt`.
 #
-# If you vendor these repos instead, you can replace the git URLs with `-e ./whisper_trt` and/or `-e ./torch2trt`.
+# If you have local checkouts of these repos (e.g. cloned next to this repo),
+# you can replace the git URLs with `-e ../whisper_trt` and/or `-e ../torch2trt`.
 
 whisper_trt @ git+https://github.com/NVIDIA-AI-IOT/whisper_trt.git
 torch2trt @ git+https://github.com/NVIDIA-AI-IOT/torch2trt.git
