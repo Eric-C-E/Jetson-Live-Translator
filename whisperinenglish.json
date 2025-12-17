@@ -1,0 +1,1 @@
+{"text": " Whisper. This is in English.", "segments": [{"id": 0, "seek": 0, "start": 0.0, "end": 6.0, "text": " Whisper. This is in English.", "tokens": [50364, 41132, 610, 13, 639, 307, 294, 3669, 13, 50664], "temperature": 0.0, "avg_logprob": -0.6199873143976385, "compression_ratio": 0.875, "no_speech_prob": 0.22559261322021484}], "language": "English"}

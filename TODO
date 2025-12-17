@@ -10,7 +10,7 @@ Use the above to send some data back and forth. Inspect data.
 
 ### PROGRAM ###
 
-1. Get and deploy WhisperTRT on some data to evaluate its performance. Post results on the project wiki.
+1. Get and deploy Whisper on some data to evaluate its performance. Post results on the project wiki.
 2. Get and deploy a language translation model and evaluate its performance. Post reults on the project wiki.
 3. Write receiving code for Audio UDP connection.
 4. Decide on an architecture for receiving the 2 bit input signal.
@@ -18,7 +18,7 @@ Use the above to send some data back and forth. Inspect data.
 6. Write a separate program that just reads the UNIX-domain socket and starts writing over TCP to the ESP. It must send a text stream and a way to identify which language (user or subject) it is.
 
 
-7. Using synthetic 48 kHz audio signal, transform it into a signal that is suitable for WhisperTRT.
+7. Using synthetic 48 kHz audio signal, transform it into a signal that is suitable for Whisper.
 8. Write test programs that send 1. Synthetic 48 kHz audio signal and 2. Synthetic 2-bit control signal (Language signal and Active signal)
 9. Architect a way to use the control signals and settings variables (Language Signal and Active Signal) to control what the entire pipeline does.
 
@@ -50,3 +50,14 @@ Run partial inference every 250ms with 50 overlap.
 Experiment with logic to remove unstable partial transcripts.
 
 OW: revert to full button-gated full sequence inference if it's proving too hard.
+
+Feed Whisper 16 kHz mono -> bypass FFMPEG invocation, reduces overhead.
+
+### Learnings ###
+
+WhisperTRT is not good for multilingual model, it's very narrow scope -> using openai-whisper.
+
+The version of Torch installed MUST support your GPU architecture. For Ampere architecture on Jetpack there is a dedicated version for SM8.7.
+
+Numpy 2+ not compatible with that vers. of Torch. Downgraded to Numpy <2.
+

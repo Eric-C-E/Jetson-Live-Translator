@@ -1,0 +1,1 @@
+{"text": " Whisper, c'est en fran\u00e7ais.", "segments": [{"id": 0, "seek": 0, "start": 0.0, "end": 5.0, "text": " Whisper, c'est en fran\u00e7ais.", "tokens": [50364, 41132, 610, 11, 269, 6, 377, 465, 21425, 13, 50614], "temperature": 0.0, "avg_logprob": -0.6699593861897787, "compression_ratio": 0.7777777777777778, "no_speech_prob": 0.17839720845222473}], "language": "French"}
