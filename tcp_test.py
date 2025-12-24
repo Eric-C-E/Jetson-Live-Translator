@@ -26,6 +26,7 @@ SAMPLE_RATE = 16000
 CHANNELS = 2
 CHANNEL_SELECT = "left"  # left, right, or mix
 SAMPLE_BYTES = 3  # packed 24-bit samples (little-endian)
+FRAME_BYTES = SAMPLE_BYTES * CHANNELS
 VIEW_SECONDS = 2.0
 MAX_BUFFER_SECONDS = 30.0
 MAX_PAYLOAD = 4096
@@ -94,6 +95,7 @@ def run_server() -> None:
     window_len = int(SAMPLE_RATE * VIEW_SECONDS)
     max_len = int(SAMPLE_RATE * MAX_BUFFER_SECONDS)
     audio_stream = np.empty((0,), dtype=np.float32)
+    carry = b""
 
     plt.ion()
     fig, ax = plt.subplots()
@@ -137,6 +139,12 @@ def run_server() -> None:
                 new_lang = update_language(flags)
                 if new_lang != INPUT_LANGUAGE:
                     INPUT_LANGUAGE = new_lang
+
+                if FRAME_BYTES > 0:
+                    payload = carry + payload
+                    trim_len = len(payload) - (len(payload) % FRAME_BYTES)
+                    carry = payload[trim_len:]
+                    payload = payload[:trim_len]
 
                 samples = decode_audio_payload(payload)
                 if samples.size == 0:
