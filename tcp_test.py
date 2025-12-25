@@ -1,15 +1,21 @@
+## TCP TEST PROGRAM
+# receives audio TCP packets
+# sends text TCP packets
+
+
 #!/usr/bin/env python3
 import socket
 import struct
-import time
-from typing import Optional
 
 import numpy as np
 
 try:
     import matplotlib.pyplot as plt
+    from matplotlib.widgets import Button, TextBox
 except ImportError as exc:
     raise SystemExit("matplotlib is required for waveform display: pip install matplotlib") from exc
+
+import select
 
 HOST = "192.168.0.165"
 PORT = 3333
@@ -20,6 +26,10 @@ HDR_SIZE = struct.calcsize(HDR_FMT)
 MAGIC = 0xAA
 VERSION = 1
 MSG_TYPE_AUDIO = 1
+MSG_TYPE_TEXT = 2
+
+FLAG_SCREEN1 = 0x04
+FLAG_SCREEN2 = 0x08
 
 # Audio format based on ESP32 I2S config (24-bit, stereo, 16 kHz)
 SAMPLE_RATE = 16000
@@ -30,18 +40,10 @@ FRAME_BYTES = SAMPLE_BYTES * CHANNELS
 VIEW_SECONDS = 2.0
 MAX_BUFFER_SECONDS = 30.0
 MAX_PAYLOAD = 4096
+TEXT_MAX_PAYLOAD = 128  # Matches TEXT_BUF_SIZE in ESP32-LLL/main/app_tcp.h
+TEXT_FLAGS = FLAG_SCREEN1
 
 INPUT_LANGUAGE = "unknown"
-
-
-def recv_all(sock: socket.socket, length: int) -> Optional[bytes]:
-    data = bytearray()
-    while len(data) < length:
-        chunk = sock.recv(length - len(data))
-        if not chunk:
-            return None
-        data.extend(chunk)
-    return bytes(data)
 
 
 def decode_audio_payload(payload: bytes) -> np.ndarray:
@@ -91,80 +93,152 @@ def run_server() -> None:
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((HOST, PORT))
     srv.listen(1)
+    srv.setblocking(False)
 
     window_len = int(SAMPLE_RATE * VIEW_SECONDS)
     max_len = int(SAMPLE_RATE * MAX_BUFFER_SECONDS)
     audio_stream = np.empty((0,), dtype=np.float32)
     carry = b""
+    buffer = bytearray()
+    conn = None
 
     plt.ion()
     fig, ax = plt.subplots()
+    fig.subplots_adjust(bottom=0.18)
     line, = ax.plot(np.zeros(window_len, dtype=np.float32))
     ax.set_ylim(-1.0, 1.0)
     ax.set_xlim(0, window_len)
     ax.set_title("Waiting for audio...")
-    fig.tight_layout()
+    status_text = fig.text(0.02, 0.01, "Disconnected")
+    count_text = fig.text(0.72, 0.01, "Chars: 0")
+
+    text_ax = fig.add_axes([0.08, 0.06, 0.58, 0.06])
+    text_box = TextBox(text_ax, "Send:", initial="")
+    btn_ax = fig.add_axes([0.70, 0.06, 0.12, 0.06])
+    send_btn = Button(btn_ax, "Send")
+
+    def update_count(text: str) -> None:
+        count_text.set_text(f"Chars: {len(text)}")
+        fig.canvas.draw_idle()
+
+    def send_text_payload(text: str) -> None:
+        nonlocal conn
+        if not text:
+            return
+        if conn is None:
+            print("No ESP32 connection; text not sent.")
+            return
+        data = text.encode("utf-8")
+        offset = 0
+        while offset < len(data):
+            chunk = data[offset:offset + TEXT_MAX_PAYLOAD]
+            header = struct.pack(HDR_FMT, MAGIC, VERSION, MSG_TYPE_TEXT,
+                                 TEXT_FLAGS, len(chunk))
+            try:
+                conn.sendall(header + chunk)
+            except OSError as exc:
+                print(f"Failed to send text: {exc}")
+                return
+            offset += len(chunk)
+
+    def submit_text(text: str | None = None) -> None:
+        current = text if text is not None else text_box.text
+        send_text_payload(current)
+        text_box.set_val("")
+        update_count("")
+
+    text_box.on_text_change(update_count)
+    text_box.on_submit(submit_text)
+    send_btn.on_clicked(lambda _evt: submit_text())
 
     print(f"Listening on {HOST}:{PORT} ...")
     while True:
-        conn, addr = srv.accept()
-        print(f"Connected by {addr}")
-        with conn:
-            while True:
-                hdr_bytes = recv_all(conn, HDR_SIZE)
-                if hdr_bytes is None:
-                    print("Connection closed")
-                    break
+        readable, _, _ = select.select(
+            [srv] + ([conn] if conn is not None else []), [], [], 0.05
+        )
+        if srv in readable:
+            new_conn, addr = srv.accept()
+            if conn is not None:
+                conn.close()
+            conn = new_conn
+            conn_addr = addr
+            conn.setblocking(False)
+            buffer.clear()
+            carry = b""
+            status_text.set_text(f"Connected: {addr[0]}:{addr[1]}")
+            fig.canvas.draw_idle()
+            print(f"Connected by {addr}")
 
-                magic, version, msg_type, flags, payload_len = struct.unpack(HDR_FMT, hdr_bytes)
-                if magic != MAGIC or version != VERSION:
-                    print(f"Bad header: magic={magic} version={version}")
-                    break
+        if conn is not None and conn in readable:
+            try:
+                data = conn.recv(4096)
+            except BlockingIOError:
+                data = b""
+            except OSError as exc:
+                print(f"Socket error: {exc}")
+                data = b""
 
-                if payload_len > MAX_PAYLOAD:
-                    print(f"Payload too large ({payload_len}), discarding")
-                    discard = recv_all(conn, payload_len)
-                    if discard is None:
-                        break
-                    continue
-
-                payload = recv_all(conn, payload_len)
-                if payload is None:
-                    print("Connection closed while receiving payload")
-                    break
-
-                if msg_type != MSG_TYPE_AUDIO:
-                    continue
-
-                new_lang = update_language(flags)
-                if new_lang != INPUT_LANGUAGE:
-                    INPUT_LANGUAGE = new_lang
-
-                if FRAME_BYTES > 0:
-                    payload = carry + payload
-                    trim_len = len(payload) - (len(payload) % FRAME_BYTES)
-                    carry = payload[trim_len:]
-                    payload = payload[:trim_len]
-
-                samples = decode_audio_payload(payload)
-                if samples.size == 0:
-                    continue
-
-                audio_stream = np.concatenate((audio_stream, samples))
-                if audio_stream.size > max_len:
-                    audio_stream = audio_stream[-max_len:]
-                window = audio_stream[-window_len:]
-                if window.size < window_len:
-                    pad = np.zeros(window_len - window.size, dtype=np.float32)
-                    window = np.concatenate((pad, window))
-
-                line.set_ydata(window)
-                ax.set_title(f"Live Audio ({INPUT_LANGUAGE})")
+            if not data:
+                print("Connection closed")
+                conn.close()
+                conn = None
+                conn_addr = None
+                status_text.set_text("Disconnected")
                 fig.canvas.draw_idle()
-                plt.pause(0.001)
+            else:
+                buffer.extend(data)
+                while True:
+                    if len(buffer) < HDR_SIZE:
+                        break
+                    magic, version, msg_type, flags, payload_len = struct.unpack(
+                        HDR_FMT, buffer[:HDR_SIZE]
+                    )
+                    if magic != MAGIC or version != VERSION:
+                        print(f"Bad header: magic={magic} version={version}")
+                        buffer.clear()
+                        break
+                    if payload_len > MAX_PAYLOAD:
+                        if len(buffer) < HDR_SIZE + payload_len:
+                            break
+                        print(f"Payload too large ({payload_len}), discarding")
+                        del buffer[:HDR_SIZE + payload_len]
+                        continue
+                    if len(buffer) < HDR_SIZE + payload_len:
+                        break
 
-        print("Waiting for reconnect...")
-        time.sleep(0.2)
+                    payload = bytes(buffer[HDR_SIZE:HDR_SIZE + payload_len])
+                    del buffer[:HDR_SIZE + payload_len]
+
+                    if msg_type != MSG_TYPE_AUDIO:
+                        continue
+
+                    new_lang = update_language(flags)
+                    if new_lang != INPUT_LANGUAGE:
+                        INPUT_LANGUAGE = new_lang
+
+                    if FRAME_BYTES > 0:
+                        payload = carry + payload
+                        trim_len = len(payload) - (len(payload) % FRAME_BYTES)
+                        carry = payload[trim_len:]
+                        payload = payload[:trim_len]
+
+                    samples = decode_audio_payload(payload)
+                    if samples.size == 0:
+                        continue
+
+                    audio_stream = np.concatenate((audio_stream, samples))
+                    if audio_stream.size > max_len:
+                        audio_stream = audio_stream[-max_len:]
+                    window = audio_stream[-window_len:]
+                    if window.size < window_len:
+                        pad = np.zeros(window_len - window.size, dtype=np.float32)
+                        window = np.concatenate((pad, window))
+
+                    line.set_ydata(window)
+                    ax.set_title(f"Live Audio ({INPUT_LANGUAGE})")
+                    fig.canvas.draw_idle()
+
+        plt.pause(0.001)
 
 
 if __name__ == "__main__":
