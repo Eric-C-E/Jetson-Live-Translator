@@ -45,7 +45,7 @@ TEXT_FLAGS = FLAG_SCREEN1
 
 INPUT_LANGUAGE = "unknown"
 
-
+# Decode packed 24-bit little-endian audio samples to float32 numpy array.
 def decode_audio_payload(payload: bytes) -> np.ndarray:
     if len(payload) < SAMPLE_BYTES:
         return np.empty((0,), dtype=np.float32)
@@ -78,7 +78,7 @@ def decode_audio_payload(payload: bytes) -> np.ndarray:
     # Normalize to [-1.0, 1.0] from 24-bit signed range.
     return mono.astype(np.float32) / float(1 << 23)
 
-
+#takes flags from header and returns language string
 def update_language(flags: int) -> str:
     if flags & 0x01:
         return "lang1"
@@ -151,11 +151,13 @@ def run_server() -> None:
     text_box.on_submit(submit_text)
     send_btn.on_clicked(lambda _evt: submit_text())
 
+    #select used here for a non-blocking event loop using select
+    #waits 50 ms to see whether server socket or active connection socket ready.
+    #args read_list, write_list, except_list, timeout
+    #posix io multiplexing style
     print(f"Listening on {HOST}:{PORT} ...")
     while True:
-        readable, _, _ = select.select(
-            [srv] + ([conn] if conn is not None else []), [], [], 0.05
-        )
+        readable, _, _ = select.select([srv] + ([conn] if conn is not None else []), [], [], 0.01)
         if srv in readable:
             new_conn, addr = srv.accept()
             if conn is not None:
@@ -178,6 +180,10 @@ def run_server() -> None:
                 print(f"Socket error: {exc}")
                 data = b""
 
+            #checks for availability of data 
+            #if data is empty, connection is closed
+            #if data present, check practical bounds and process
+            #srv active listening socket, conn active connection socket
             if not data:
                 print("Connection closed")
                 conn.close()
@@ -205,6 +211,8 @@ def run_server() -> None:
                         continue
                     if len(buffer) < HDR_SIZE + payload_len:
                         break
+                    
+                    ## start processing packet to draw waveform
 
                     payload = bytes(buffer[HDR_SIZE:HDR_SIZE + payload_len])
                     del buffer[:HDR_SIZE + payload_len]
