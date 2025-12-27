@@ -44,6 +44,15 @@ You can pass extra pip args via `PIP_EXTRA_ARGS`, for example:
 PIP_EXTRA_ARGS="--no-index --find-links $HOME/wheels" ./scripts/setup_venv.sh
 ```
 
+## Offline tokenizer cache
+
+By default the OpusMT tokenizer loads in offline mode. If you want to download
+tokenizers from Hugging Face, run once with:
+
+```bash
+python main.py --tokenizer-allow-network
+```
+
 System packages you may need (varies by OS):
 - `ffmpeg` (Whisper audio decode)
 The program shouldn't need it but you'll need it to play with whisper and audio files.

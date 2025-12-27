@@ -20,16 +20,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-window-seconds", type=float, default=1.0)
     parser.add_argument("--max-buffer-seconds", type=float, default=30.0)
     parser.add_argument("--text-max-payload", type=int, default=128)
-    parser.add_argument("--lang1-label", default="lang1")
-    parser.add_argument("--lang2-label", default="lang2")
+    parser.add_argument("--lang1-label", default="en")
+    parser.add_argument("--lang2-label", default="fr")
 
     parser.add_argument("--whisper-model", default="tiny")
     parser.add_argument("--whisper-device", default="cuda")
-    parser.add_argument("--whisper-compute-type", default="int8_float16")
+    parser.add_argument("--whisper-compute-type", default="int8")
     parser.add_argument("--whisper-language", default=None)
+    parser.add_argument("--whisper-no-speech-threshold", type=float, default=0.3)
 
     parser.add_argument("--opus-en-fr", default="/home/eric/models/opus/ct2/en-fr")
     parser.add_argument("--opus-fr-en", default="/home/eric/models/opus/ct2/fr-en")
+    parser.add_argument("--opus-en-fr-tokenizer", default="Helsinki-NLP/opus-mt-en-fr")
+    parser.add_argument("--opus-fr-en-tokenizer", default="Helsinki-NLP/opus-mt-fr-en")
+    parser.add_argument("--tokenizer-local-only", action="store_true", default=True)
+    parser.add_argument("--tokenizer-allow-network", action="store_true", default=False)
     parser.add_argument("--ct2-device", default="cuda")
     parser.add_argument("--ct2-compute-type", default="int8_float16")
 
@@ -53,10 +58,16 @@ def main() -> None:
         device=args.whisper_device,
         compute_type=args.whisper_compute_type,
         language=args.whisper_language,
+        no_speech_threshold=args.whisper_no_speech_threshold,
     )
     opus = OpusMTConfig(
         en_fr_path=args.opus_en_fr,
         fr_en_path=args.opus_fr_en,
+        en_fr_tokenizer=args.opus_en_fr_tokenizer,
+        fr_en_tokenizer=args.opus_fr_en_tokenizer,
+        tokenizer_local_only=args.tokenizer_local_only and not args.tokenizer_allow_network,
+        lang1_label=args.lang1_label,
+        lang2_label=args.lang2_label,
         device=args.ct2_device,
         compute_type=args.ct2_compute_type,
     )

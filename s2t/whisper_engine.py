@@ -15,6 +15,7 @@ class WhisperConfig:
     compute_type: str = "int8_float16"
     language: Optional[str] = None
     beam_size: int = 1
+    no_speech_threshold: float = 0.9
 
 
 class WhisperEngine:
@@ -33,13 +34,17 @@ class WhisperEngine:
             compute_type=self.config.compute_type,
         )
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, language: Optional[str] = None) -> str:
         if audio.size == 0:
             return ""
+        lang = self.config.language if language is None else language
+        if not lang:
+            raise ValueError("Whisper language must be provided to avoid detection.")
         segments, _info = self.model.transcribe(
             audio,
-            language=self.config.language,
+            language=lang,
             beam_size=self.config.beam_size,
+            no_speech_threshold=self.config.no_speech_threshold,
             vad_filter=False,
             condition_on_previous_text=False,
         )

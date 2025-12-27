@@ -91,20 +91,24 @@ class PipelineWorker(threading.Thread):
         self.buffer = FloatRingBuffer(int(config.max_buffer_seconds * config.sample_rate))
         self.current_lang = config.lang1_label
         self.rate = RateLimiter(config.step_hz)
+        self.last_audio_ts = time.monotonic()
 
     def _transcribe_window(self) -> str:
         window_samples = int(self.config.window_seconds * self.config.sample_rate)
         audio = self.buffer.get_last(window_samples)
-        return self.whisper.transcribe(audio)
+        return self.whisper.transcribe(audio, language=self.current_lang)
 
     def _process_text(self, text: str, src_lang: str, finalize: bool = False) -> None:
+        logging.debug("Transcript lang=%s finalize=%s text=%r", src_lang, finalize, text)
         delta = self.committer.feed(text)
         if finalize:
             delta += self.committer.finalize(text)
         if not delta:
             return
+        logging.debug("Commit delta lang=%s text=%r", src_lang, delta)
         translated = self.translator.translate(delta, src_lang)
         if translated:
+            logging.debug("Translated lang=%s text=%r", src_lang, translated)
             self.tx_q.put((translated, src_lang))
 
     def _flush(self) -> None:
@@ -122,8 +126,12 @@ class PipelineWorker(threading.Thread):
             try:
                 chunk: AudioChunk = self.audio_q.get(timeout=0.1)
             except queue.Empty:
+                if self.buffer.size and (time.monotonic() - self.last_audio_ts) >= self.config.min_window_seconds:
+                    logging.debug("Idle flush after %.2fs without audio", time.monotonic() - self.last_audio_ts)
+                    self._flush()
                 continue
 
+            self.last_audio_ts = time.monotonic()
             if chunk.lang != self.current_lang:
                 logging.info("Language switch %s -> %s", self.current_lang, chunk.lang)
                 self._flush()
@@ -225,6 +233,14 @@ class Coordinator:
             flags = _output_flag(out_lang, self.config.lang1_label, self.config.lang2_label)
             raw = text.encode("utf-8")
             for chunk in _chunk_bytes(raw, self.config.text_max_payload):
+                logging.debug(
+                    "TX packet msg_type=%s flags=0x%02X payload_len=%s out_lang=%s text=%r",
+                    MSG_TYPE_TEXT,
+                    flags,
+                    len(chunk),
+                    out_lang,
+                    chunk.decode("utf-8", errors="replace"),
+                )
                 packet = build_packet(MSG_TYPE_TEXT, flags, chunk)
                 if not self.server.send(packet):
                     logging.warning("No active connection; drop text")
