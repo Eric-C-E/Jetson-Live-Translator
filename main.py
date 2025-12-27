@@ -1,74 +1,92 @@
-# Constructs audio_q, final_q, tx_q
-# constructs whisper (s2t)
-# constructs translator (Opus-MT Marian)
-# constructs committer
-# starts threads + asyncio client/server
+from __future__ import annotations
 
-# main.py
-import numpy as np
-from net.tcp_client import TCPServer
-from net.protocol import StreamParser, MSG_TYPE_AUDIO, MSG_TYPE_TEXT, build_packet
-from audio.format import decode_packed_24bit_stereo_to_mono
-from utils.timing_helpers import RateLimiter
+import argparse
+import logging
 
-HOST = "192.168.0.165"
-PORT = 3333
+from mt.opusmt_ct2 import OpusMTConfig
+from pipeline.coordinator import PipelineConfig, Coordinator
+from s2t.commit import CommitConfig
+from s2t.whisper_engine import WhisperConfig
 
-SAMPLE_RATE = 16000
-CHANNELS = 2
-CHANNEL_SELECT = "left"
 
-# Flags you already use
-FLAG_SCREEN1 = 0x04
-FLAG_SCREEN2 = 0x08
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Jetson-Live-Translator")
+    parser.add_argument("--host", default="192.168.0.165")
+    parser.add_argument("--port", type=int, default=3333)
+    parser.add_argument("--sample-rate", type=int, default=16000)
+    parser.add_argument("--channels", type=int, default=2)
+    parser.add_argument("--window-seconds", type=float, default=4.0)
+    parser.add_argument("--step-hz", type=float, default=1.0)
+    parser.add_argument("--min-window-seconds", type=float, default=1.0)
+    parser.add_argument("--max-buffer-seconds", type=float, default=30.0)
+    parser.add_argument("--text-max-payload", type=int, default=128)
+    parser.add_argument("--lang1-label", default="lang1")
+    parser.add_argument("--lang2-label", default="lang2")
 
-TEXT_MAX_PAYLOAD = 128
-TEXT_FLAGS = FLAG_SCREEN1
+    parser.add_argument("--whisper-model", default="tiny")
+    parser.add_argument("--whisper-device", default="cuda")
+    parser.add_argument("--whisper-compute-type", default="int8_float16")
+    parser.add_argument("--whisper-language", default=None)
 
-def chunk_bytes(b: bytes, n: int):
-    for i in range(0, len(b), n):
-        yield b[i:i+n]
+    parser.add_argument("--opus-en-fr", default="/home/eric/models/opus/ct2/en-fr")
+    parser.add_argument("--opus-fr-en", default="/home/eric/models/opus/ct2/fr-en")
+    parser.add_argument("--ct2-device", default="cuda")
+    parser.add_argument("--ct2-compute-type", default="int8_float16")
 
-def main():
-    srv = TCPServer(HOST, PORT)
-    parser = StreamParser()
-    live_rate = RateLimiter(hz=2.0)   # you said 1–2 Hz is fine
+    parser.add_argument("--commit-history", type=int, default=3)
+    parser.add_argument("--commit-min-chars", type=int, default=1)
 
-    audio_stream = np.empty((0,), dtype=np.float32)
-    carry = b""
+    parser.add_argument("--log-level", default="INFO")
+    return parser
 
-    while True:
-        data = srv.poll(timeout_s=0.01)
-        if data:
-            for pkt in parser.feed(data):
-                if pkt.msg_type != MSG_TYPE_AUDIO:
-                    continue
 
-                payload = carry + pkt.payload
+def main() -> None:
+    args = build_parser().parse_args()
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="[%(asctime)s] %(levelname)s %(message)s",
+    )
+    logging.info("Starting Jetson-Live-Translator")
 
-                # Ensure full frames (3 bytes * channels)
-                frame_bytes = 3 * CHANNELS
-                trim_len = len(payload) - (len(payload) % frame_bytes)
-                carry = payload[trim_len:]
-                payload = payload[:trim_len]
+    whisper = WhisperConfig(
+        model_size=args.whisper_model,
+        device=args.whisper_device,
+        compute_type=args.whisper_compute_type,
+        language=args.whisper_language,
+    )
+    opus = OpusMTConfig(
+        en_fr_path=args.opus_en_fr,
+        fr_en_path=args.opus_fr_en,
+        device=args.ct2_device,
+        compute_type=args.ct2_compute_type,
+    )
+    commit = CommitConfig(
+        history_len=args.commit_history,
+        min_commit_chars=args.commit_min_chars,
+    )
+    config = PipelineConfig(
+        host=args.host,
+        port=args.port,
+        sample_rate=args.sample_rate,
+        channels=args.channels,
+        window_seconds=args.window_seconds,
+        step_hz=args.step_hz,
+        min_window_seconds=args.min_window_seconds,
+        max_buffer_seconds=args.max_buffer_seconds,
+        text_max_payload=args.text_max_payload,
+        lang1_label=args.lang1_label,
+        lang2_label=args.lang2_label,
+        whisper=whisper,
+        opus=opus,
+        commit=commit,
+    )
 
-                samples = decode_packed_24bit_stereo_to_mono(
-                    payload, channels=CHANNELS, channel_select=CHANNEL_SELECT
-                )
-                if samples.size == 0:
-                    continue
+    try:
+        Coordinator(config).start()
+    except Exception:
+        logging.exception("Fatal error")
+        raise
 
-                # Accumulate or forward to Whisper worker later
-                audio_stream = np.concatenate((audio_stream, samples))
-
-                # Non-prod demo: every 2 Hz send a dumb status line
-                if live_rate.allow():
-                    txt = f"samples={audio_stream.size}"
-                    raw = txt.encode("utf-8")
-
-                    # Your current ESP32 expects TEXT_MAX_PAYLOAD chunks
-                    for c in chunk_bytes(raw, TEXT_MAX_PAYLOAD):
-                        srv.send(build_packet(MSG_TYPE_TEXT, TEXT_FLAGS, c))
 
 if __name__ == "__main__":
     main()

@@ -14,7 +14,9 @@ openai-whisper
 
 # Optional backends / pipeline components (keep if you use them).
 faster-whisper
-ctranslate2
+#ctranslate2 do not install via pip if you want CUDA. Build from source!
+transformers
+sentencepiece
 
 # Runtime libraries used by whisper_trt + examples.
 numpy
@@ -23,3 +25,4 @@ onnx
 onnxruntime
 pyaudio
 soundfile
+
