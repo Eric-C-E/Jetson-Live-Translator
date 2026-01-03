@@ -41,6 +41,7 @@ class PipelineConfig:
     whisper: WhisperConfig | None = None
     opus: OpusMTConfig | None = None
     commit: CommitConfig | None = None
+    plotter: object | None = None
 
 
 @dataclass
@@ -151,6 +152,7 @@ class Coordinator:
         self.stop = threading.Event()
         self.audio_q: queue.Queue[AudioChunk] = queue.Queue(maxsize=200)
         self.tx_q: queue.Queue[tuple[str, str]] = queue.Queue()
+        self.plotter = config.plotter
 
         logging.info(
             "Initializing pipeline host=%s port=%s sample_rate=%s channels=%s window=%.2fs step_hz=%.2f",
@@ -217,6 +219,13 @@ class Coordinator:
             )
             if samples.size == 0:
                 continue
+
+            if self.plotter is not None:
+                try:
+                    self.plotter.push_samples(samples, self.config.sample_rate)
+                except Exception:
+                    logging.exception("Plotter failed; disabling waveform display")
+                    self.plotter = None
 
             try:
                 self.audio_q.put_nowait(AudioChunk(samples=samples, lang=self.current_lang))

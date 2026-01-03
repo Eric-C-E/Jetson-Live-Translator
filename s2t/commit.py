@@ -16,10 +16,22 @@ def _lcp_all(items: Deque[str]) -> str:
     return shortest
 
 
+def _overlap_suffix_prefix(left: str, right: str) -> int:
+    """
+    Return the longest suffix length of left that is a prefix of right.
+    """
+    max_len = min(len(left), len(right))
+    for size in range(max_len, 0, -1):
+        if left[-size:] == right[:size]:
+            return size
+    return 0
+
+
 @dataclass
 class CommitConfig:
     history_len: int = 3
     min_commit_chars: int = 1
+    min_overlap_chars: int = 4
 
 
 class SimpleCommitter:
@@ -45,6 +57,11 @@ class SimpleCommitter:
         text = text.strip()
         if not text:
             return ""
+        if self._committed and not text.startswith(self._committed):
+            overlap = _overlap_suffix_prefix(self._committed, text)
+            if overlap >= self.config.min_overlap_chars:
+                self._committed = self._committed[-overlap:] if overlap else ""
+            self._history.clear()
         self._history.append(text)
 
         stable = _lcp_all(self._history)
@@ -65,4 +82,14 @@ class SimpleCommitter:
             delta = text[len(self._committed):]
             self._committed = text
             return delta
+        if self._committed:
+            overlap = _overlap_suffix_prefix(self._committed, text)
+            if overlap:
+                delta = text[overlap:]
+                self._committed = text
+                self._history.clear()
+                return delta
+        self._committed = text
+        self._history.clear()
+        return text
         return ""

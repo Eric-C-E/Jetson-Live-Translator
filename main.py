@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import threading
 
 from mt.opusmt_ct2 import OpusMTConfig
 from pipeline.coordinator import PipelineConfig, Coordinator
@@ -42,6 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--commit-min-chars", type=int, default=1)
 
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--plot-audio", action="store_true", default=False)
+    parser.add_argument("--plot-window-seconds", type=float, default=10.0)
+    parser.add_argument("--plot-hz", type=float, default=20.0)
     return parser
 
 
@@ -93,7 +97,22 @@ def main() -> None:
     )
 
     try:
-        Coordinator(config).start()
+        if args.plot_audio:
+            from utils.graphic_user_interface import AudioIntensityPlotter
+
+            plotter = AudioIntensityPlotter(
+                window_seconds=args.plot_window_seconds,
+                target_hz=args.plot_hz,
+            )
+            config.plotter = plotter
+            coordinator = Coordinator(config)
+            thread = threading.Thread(target=coordinator.start, daemon=True)
+            thread.start()
+            plotter.run(on_close=coordinator.stop.set)
+            coordinator.stop.set()
+            thread.join(timeout=2.0)
+        else:
+            Coordinator(config).start()
     except Exception:
         logging.exception("Fatal error")
         raise
